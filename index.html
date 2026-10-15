@@ -148,6 +148,21 @@ details.howto ol { margin: 0 0 10px; padding-left: 1.3em; font-size: 0.88rem; di
 .cal .d.done { background: var(--pen-soft); opacity: 1; }
 .cal .d.today { border-color: var(--pen); box-shadow: inset 0 0 0 1px var(--pen); opacity: 1; }
 .cal .d.exam { border-color: var(--mark); color: var(--mark); }
+.cal button.d { font: inherit; color: inherit; cursor: pointer; }
+.cal button.d:hover { border-color: var(--ink-2); }
+.ulist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.urow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); cursor: pointer; text-align: left; font: inherit; color: inherit; min-width: 0; }
+.urow:hover { border-color: var(--ink-2); }
+.urow .t { flex: 1; min-width: 0; font-weight: 600; font-size: 0.92rem; }
+.urow .t small { display: block; font-weight: 400; font-size: 0.78rem; color: var(--ink-2); margin-top: 2px; }
+.urow .s { font-size: 0.8rem; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.urow .s[data-lv="good"] { color: var(--good); } .urow .s[data-lv="warn"] { color: var(--warn); } .urow .s[data-lv="bad"] { color: var(--bad); }
+.area-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.area-head h3 { font-size: 1rem; margin: 0; flex: 1; min-width: 0; color: var(--ink); font-weight: 700; }
+.area-head h3 .small { font-weight: 400; }
+.picks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pick { min-height: 40px; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--sheet); cursor: pointer; font: inherit; font-size: 0.85rem; color: inherit; }
+.pick[aria-pressed="true"] { background: var(--pen); color: var(--pen-ink); border-color: var(--pen); }
 .cal .d .cnt { font-size: 0.7rem; color: var(--pen); font-variant-numeric: tabular-nums; }
 
 /* 예상 점수 */
@@ -409,7 +424,7 @@ const lv = acc => acc == null ? '' : acc >= 0.6 ? 'good' : acc >= 0.3 ? 'warn' :
 const scrollTop = () => { try { window.scrollTo(0, 0); } catch (e) { /* 무시 */ } };
 
 /* ---------- 설정 (이 기기만) ---------- */
-const prefs = Object.assign({ fs: 'm', theme: 'auto', guideDone: false }, lsJSON(LS_PREFS) || {});
+const prefs = Object.assign({ fs: 'm', theme: 'auto', guideDone: false, mockLock: 'on' }, lsJSON(LS_PREFS) || {});
 function applyPrefs() {
   const root = document.documentElement;
   root.dataset.fs = prefs.fs;
@@ -491,7 +506,7 @@ function onData() {
   const txt = { loading: '기록 불러오는 중', db: '저장됨', pending: `저장 중 ${Store.outbox.length}건`, local: '이 기기에 저장', memory: '저장 안 됨', 'db-error': `저장 대기 ${Store.outbox.length}건` };
   el.dataset.mode = mode; el.textContent = txt[mode] || '';
   el.title = { db: '기록이 저장소에 저장돼 휴대폰과 PC에서 같이 보여요', pending: '보내는 중이에요', local: '이 브라우저에만 저장돼요. 설정에서 백업할 수 있어요', memory: '이 브라우저가 저장을 막고 있어요. 설정에서 기록을 복사해 두세요', 'db-error': '연결이 끊겨 이 기기에 모아 두었어요. 연결되면 자동으로 보내요' }[mode] || '';
-  if (BANK && (state.view === 'home' || state.view === 'wrong' || state.view === 'settings' || state.view === 'rsets')) render();  // 푸는 법 화면은 펼친 상태를 지키려고 다시 그리지 않는다
+  if (BANK && (state.view === 'home' || state.view === 'wrong' || state.view === 'settings' || state.view === 'rsets' || state.view === 'random')) render();  // 푸는 법 화면은 펼친 상태를 지키려고 다시 그리지 않는다
 }
 
 /* ---------- 문제은행: 사본을 먼저 쓰고, 새 판이 있으면 바꾼다 ---------- */
@@ -569,7 +584,7 @@ async function loadLazy() {
 
 /* ---------- 모의고사 전용 문항 잠금 ---------- */
 const mockTaken = setId => Object.values(Store.data.mocks).some(m => m && m.set === setId);
-const isLocked = q => !!q.mock && !mockTaken(q.mock);
+const isLocked = q => prefs.mockLock !== 'off' && !!q.mock && !mockTaken(q.mock);  // 설정에서 끌 수 있다
 const open = list => list.filter(q => !isLocked(q));
 const mockSetFor = date => BANK.mockSets.find(m => m.date === date) || null;
 const findSet = id => BANK.mockSets.concat(BANK.rsets || []).find(m => m.id === id) || null;
@@ -671,6 +686,51 @@ function startTrend() {
   const qs = trendQuestions().map((q, i) => ({ q, i })).sort((a, b) => rank(a.q) - rank(b.q) || a.i - b.i).map(x => x.q);
   go(newSession('unit', '최근 회차 경향', qs.map(q => ({ qid: q.id }))));
 }
+function startPlanDay(date) {
+  const p = BANK.index.plan.find(x => x.date === date); if (!p) return;
+  if (p.mode === 'unit') go(newSession('unit', `${fmtDay(p.date)} 계획 · ${p.title}`, unitQuestions(p.units).map(q => ({ qid: q.id }))));
+  else if (p.mode === 'review') startReview();
+  else if (p.mode === 'mock') { const ms = mockSetFor(p.date); if (ms) startMockSet(ms.id); else startMock(); }
+  else toast('시험날이에요. 오답 노트로 마지막 훑어보기를 하세요.');
+}
+// 랜덤 풀기: 범위(전체·영역·단원) × 조건(전체·안 푼 것·틀린 것) × 문항 수
+function randomQuestions(o) {
+  const units = o.units || [], areas = o.areas || [];
+  let pool = open(BANK.qs);
+  if (units.length) pool = pool.filter(q => units.includes(q.unit));
+  else if (areas.length) pool = pool.filter(q => areas.includes(q.area));
+  if (o.cond === 'unseen') pool = pool.filter(q => !statOf(q.id));
+  else if (o.cond === 'wrong') pool = pool.filter(q => { const st = statOf(q.id); return !!(st && !st.ok); });
+  pool = shuffle(pool.slice());
+  return o.n === 'all' ? pool : pool.slice(0, Number(o.n) || 20);
+}
+const rndState = () => (state.rnd = state.rnd || { areas: [], units: [], n: '20', cond: 'all' });
+function startRandom() {
+  const o = rndState(); const qs = randomQuestions(o);
+  go(newSession('random', '랜덤 풀기', qs.map(q => ({ qid: q.id }))));
+}
+function renderRandom() {
+  const o = rndState(); const avail = randomQuestions(Object.assign({}, o, { n: 'all' })).length;
+  const press = (on) => `aria-pressed="${on}"`;
+  const areaPicks = BANK.index.areas.map(a => `<button class="pick" data-act="rnd-area" data-k="${esc(a.key)}" ${press(o.areas.includes(a.key))}>${esc(a.key)}</button>`).join('');
+  const unitPicks = BANK.index.areas.map(a => `<div class="small muted" style="margin-top:8px">${esc(a.key)}</div><div class="picks">${a.units.map(u => `<button class="pick" data-act="rnd-unit" data-k="${esc(u)}" ${press(o.units.includes(u))}>${esc(u)}</button>`).join('')}</div>`).join('');
+  const seg = (act, val, label, cur) => `<button data-act="${act}" data-val="${val}" aria-pressed="${cur === val}">${label}</button>`;
+  const scopeTxt = o.units.length ? `단원 ${o.units.length}개` : o.areas.length ? `영역 ${o.areas.length}개` : '전체';
+  const n = o.n === 'all' ? avail : Math.min(Number(o.n), avail);
+  $('#view').innerHTML = `<div class="stack">
+    <div class="qbar"><button class="btn ghost" data-act="home">← 홈</button><span class="title">랜덤 풀기</span></div>
+    <section class="sheet"><div class="sec-label">1. 범위 · 지금: ${scopeTxt}</div>
+      <div class="picks"><button class="pick" data-act="rnd-all" ${press(!o.areas.length && !o.units.length)}>전체</button>${areaPicks}</div>
+      <details class="howto" style="margin-top:10px"${o.units.length ? ' open' : ''}><summary>단원으로 고르기 (고르면 영역 선택보다 먼저 적용)</summary>${unitPicks}</details></section>
+    <section class="sheet"><div class="sec-label">2. 문항 수</div>
+      <div class="seg" role="group" aria-label="문항 수" style="margin-top:6px">${seg('rnd-n', '10', '10', o.n)}${seg('rnd-n', '20', '20', o.n)}${seg('rnd-n', '30', '30', o.n)}${seg('rnd-n', 'all', '전체', o.n)}</div></section>
+    <section class="sheet"><div class="sec-label">3. 조건</div>
+      <div class="seg" role="group" aria-label="조건" style="margin-top:6px">${seg('rnd-cond', 'all', '전체', o.cond)}${seg('rnd-cond', 'unseen', '안 푼 것만', o.cond)}${seg('rnd-cond', 'wrong', '틀린 것만', o.cond)}</div>
+      <p class="small muted" style="margin-top:8px">조건에 맞는 문제 ${avail}개 · 이번에 ${n}문제를 섞어서 내요.</p></section>
+    <button class="btn primary big" data-act="random-start"${avail ? '' : ' disabled'}>${avail ? `랜덤 ${n}문제 시작` : '조건에 맞는 문제가 없어요'}</button>
+  </div>`;
+}
+
 function startRetry(ids, title) { const seen = new Set(); go(newSession('retry', title, ids.filter(id => BANK.byId[id] && !seen.has(id) && seen.add(id)).map(id => ({ qid: id })))); }
 function startMock() {
   const items = [];
@@ -687,8 +747,7 @@ function saveSession() { const s = state.session; if (s && !s.finished) lsSet(LS
 function loadSession() {
   let s = lsJSON(LS_SESSION);
   if (!s) { s = lsJSON(LS_MOCK_OLD); if (s) { lsDel(LS_MOCK_OLD); lsSet(LS_SESSION, JSON.stringify(s)); } }
-  // 날짜가 바뀌면 학습 세트는 끝난 것으로 본다 (푼 기록은 이미 저장됨, 남은 문제는 복습에 섞여 나온다). 모의고사는 이어 간다.
-  if (s && s.kind !== 'mock' && ymd(new Date(s.startedAt)) !== todayStr()) { lsDel(LS_SESSION); return null; }
+  // 날짜가 바뀌어도 풀던 세트는 그대로 이어 푼다 (10/15 사장님 요청)
   return s && !s.finished && Array.isArray(s.items) && s.items.length && s.items.every(it => BANK.byId[it.qid]) ? s : null;
 }
 const sessionAnswered = s => s.kind === 'mock' ? Object.keys(s.answers).filter(k => hasValue(s.answers[k])).length : Object.keys(s.results).length;
@@ -878,14 +937,14 @@ function renderHome() {
 
   if (!prefs.guideDone && !Object.keys(Store.data.q).some(id => !id.startsWith('DX-'))) {
     parts.push(`<section class="guide" aria-label="처음 쓰는 법"><b>처음이면 이것만 알면 돼요</b><ol>
-      <li>아래 <b>오늘 할 것 시작</b>을 누르세요. 그날 계획과 복습이 한 번에 나와요.</li>
+      <li>아래 <b>단원</b>을 누르면 그 단원 문제를 안 푼 것부터 풀어요. 섞어서 풀려면 <b>랜덤 풀기</b>.</li>
       <li>답을 쓰고 <b>채점</b>. 모르면 <b>모름</b>을 누르고 해설의 "외울 한 줄"만 읽으세요.</li>
-      <li>틀린 문제는 1일 뒤, 3일 뒤 알아서 다시 나와요. 기록은 자동 저장돼요.</li></ol>
+      <li>틀린 문제는 1일 뒤, 3일 뒤 알아서 다시 나와요. 날짜가 지나도 풀던 세트는 이어 풀 수 있어요.</li></ol>
       <div><button class="btn" data-act="guide-done">알겠어요</button></div></section>`);
   }
 
-  // 오늘 블록
-  let main = '', sub = '', chips = '';
+  // 맨 위: 이어 풀기 또는 추천(오늘 할 것) 버튼 하나
+  let main = '', sub = '';
   if (saved) {
     const n = sessionAnswered(saved), tot = saved.items.length;
     if (mockExpired(saved)) main = `<button class="btn primary big" data-act="mock-finish">시간이 끝난 ${esc(saved.title)} · 결과 보기</button>`;
@@ -893,35 +952,60 @@ function renderHome() {
     sub = `<div class="actions"><button class="btn ghost" data-act="end-session">${saved.kind === 'mock' ? '이 모의고사 버리기' : '여기까지 하고 결과 보기'}</button></div>`;
   } else if (plan && plan.mode === 'mock') {
     const ms = mockSetFor(plan.date);
-    main = ms && !mockTaken(ms.id) ? `<button class="btn primary big" data-act="mockset" data-set="${esc(ms.id)}">${esc(ms.title)} 시작 · 20문항 · 150분</button>` : `<button class="btn primary big" data-act="mock">연습 모의고사 · 20문항</button>`;
+    main = ms && !mockTaken(ms.id) ? `<button class="btn primary big" data-act="mockset" data-set="${esc(ms.id)}">추천 · ${esc(ms.title)} 시작 · 20문항 · 150분</button>` : `<button class="btn primary big" data-act="mock">추천 · 연습 모의고사 · 20문항</button>`;
   } else if (plan && plan.mode === 'exam') {
     main = `<p><b>오늘은 시험날이에요.</b> 신분증, 수험표, 검정 볼펜을 챙기세요. 아래 '오답 노트'로 마지막 훑어보기만 하세요.</p>`;
   } else {
     const td = buildTodayItems();
-    if (td.items.length) {
-      main = `<button class="btn primary big" data-act="today">오늘 할 것 시작 · ${td.items.length}문제</button>`;
-      sub = `<p class="small muted">${td.rev ? `복습 ${td.rev}문제 + ` : ''}${plan && plan.mode === 'unit' ? `${esc(plan.short)} 새 문제 ${td.items.length - td.rev}문제` : '복습 위주'} · 약 ${plan ? plan.minutes : 10}분</p>`;
-    } else {
-      main = `<button class="btn primary big" data-act="review">오늘 분량 끝 · 10분 복습 더 하기</button>`;
-    }
+    main = td.items.length ? `<button class="btn primary big" data-act="today">추천 · 오늘 할 것 시작 · ${td.items.length}문제</button>` : `<button class="btn primary big" data-act="review">추천 · 10분 복습</button>`;
   }
-  if (plan && plan.units.length) chips = `<div class="chips">${plan.units.map(u => { const g = groupStats(open(BANK.byUnit[u] || [])); return `<span class="chip">${esc(u)}<span class="n">${g.att}/${g.total}</span></span>`; }).join('')}</div>`;
-  const target = plan ? capFor(plan.minutes) : 10;
-  const pct = Math.min(100, Math.round((lg.n / target) * 100));
   parts.push(`<section class="sheet today">
-    <div class="today-top"><span class="dday">${ddTxt}<small>${esc(fmtDay(idx.examDate))} 시험 · 60점 합격</small></span><span class="sec-label">${esc(fmtDay(t))}</span></div>
-    ${plan ? `<h2>${esc(plan.title)}</h2>` : '<h2>계획표 밖의 날</h2>'}
-    ${chips}
-    <div class="meter"><div class="bar"><i data-lv="pen" style="width:${pct}%"></i></div><div class="row"><span>오늘 푼 문제 ${lg.n} · 맞힘 ${lg.c}</span><span>목표 ${target}</span></div></div>
-    ${main}${sub}
-    ${plan && plan.link ? `<a class="ext" href="${esc(plan.link)}" target="_blank" rel="noopener">정처기 감자에서 개념 먼저 보기 ↗</a>` : ''}
-  </section>`);
+    <div class="today-top"><span class="dday">${ddTxt}<small>${esc(fmtDay(idx.examDate))} 시험 · 60점 합격</small></span><span class="sec-label">오늘 ${lg.n}문제 · 맞힘 ${lg.c}</span></div>
+    ${main}${sub}</section>`);
 
   parts.push(`<section class="quick" aria-label="빠른 시작">
-    ${BANK.guide ? `<button class="btn" data-act="guide"><b>${BANK.guide.points.length}</b>코드 문제 푸는 법</button>` : ''}
+    <button class="btn" data-act="random"><b>🎲</b>랜덤 풀기</button>
     <button class="btn" data-act="wrong"><b>${wrongs.length}</b>오답 노트</button>
     <button class="btn" data-act="review"><b>${due}</b>복습 대기</button>
+    ${(BANK.rsets || []).length ? `<button class="btn" data-act="rsets"><b>${BANK.rsets.length}</b>실전 모의고사</button>` : ''}
+    ${BANK.guide ? `<button class="btn" data-act="guide"><b>${BANK.guide.points.length}</b>코드 문제 푸는 법</button>` : ''}
     <button class="btn" data-act="mock"><b>20</b>연습 모의고사</button></section>`);
+
+  // 단원 목록 (첫 화면의 주인공): 영역 → 단원, 단원마다 문항 수·푼 수·정답률
+  const unitRow = u => {
+    const all = BANK.byUnit[u] || []; const g = groupStats(open(all)); const locked = all.filter(isLocked).length;
+    const acc = g.att ? `${Math.round(g.acc * 100)}%` : '-';
+    return `<li><button class="urow" data-act="unit" data-unit="${esc(u)}"><span class="t">${esc(u)}<small>${g.total}문항 · 푼 ${g.att} · 정답률 ${acc}${locked ? ` · 모의고사용 ${locked}문항은 모의고사를 본 뒤 열립니다` : ''}</small></span><span class="s" data-lv="${g.att ? lv(g.acc) : ''}">${g.att ? `${g.ok}/${g.att}` : '시작'} ›</span></button></li>`;
+  };
+  const areaBlocks = idx.areas.map(a => {
+    const g = groupStats(open(BANK.byArea[a.key] || []));
+    return `<div class="unit-group"><div class="area-head"><h3>${esc(a.key)} <span class="small muted">${g.total}문항 · 푼 ${g.att}${g.att ? ` · 정답률 ${Math.round(g.acc * 100)}%` : ''}</span></h3><button class="btn" data-act="area" data-area="${esc(a.key)}">이 영역 전체 풀기</button></div><ul class="ulist">${a.units.map(unitRow).join('')}</ul></div>`;
+  }).join('');
+  parts.push(`<section class="sheet"><div class="sec-label">단원별 문제 · 누르면 안 푼 것 → 틀린 것 → 맞힌 것 순으로 나와요</div><div class="unit-groups">${areaBlocks}</div></section>`);
+
+  // 날짜별 계획: 지난 날짜도 눌러서 다시 풀 수 있다
+  const cal = idx.plan.map(p => {
+    const l = Store.data.log[p.date]; const n = l ? l.n : 0; const d = parseYmd(p.date);
+    const cls = ['d', p.date < t ? 'past' : '', p.date === t ? 'today' : '', n ? 'done' : '', p.mode === 'exam' ? 'exam' : ''].join(' ');
+    return `<button class="${cls}" data-act="plan-day" data-date="${esc(p.date)}" title="${esc(p.title)}"><div class="wd">${WD[d.getDay()]}</div><div class="num">${d.getDate()}</div><div class="sh">${esc(p.short || '')}</div>${n ? `<div class="cnt">${l.c}/${n}</div>` : ''}</button>`;
+  }).join('');
+  parts.push(`<section><div class="sec-label" style="margin-bottom:8px">날짜별 계획 · 지난 날짜도 눌러서 그날 단원을 풀 수 있어요</div><div class="cal">${cal}</div></section>`);
+
+  const setRows = BANK.mockSets.map(m => {
+    const taken = Object.values(Store.data.mocks).filter(x => x && x.set === m.id).sort((a, b) => b.at - a.at)[0];
+    return `<li><span class="grow"><b>${esc(m.title)}</b> <span class="muted small">· ${esc(fmtDay(m.date))} 계획 · 20문항</span></span>${taken ? `<b class="tnum ${taken.score >= 60 ? 'okp' : 'nop'}">${taken.score}점</b><button class="btn ghost" data-act="mockset" data-set="${esc(m.id)}">다시 보기</button>` : `<button class="btn" data-act="mockset" data-set="${esc(m.id)}">시작</button>`}</li>`;
+  }).join('');
+  const mocks = Object.values(Store.data.mocks).filter(Boolean).sort((a, b) => b.at - a.at);
+  parts.push(`<section class="sheet"><div class="sec-label">모의고사 · 20문항 · 150분 · 언제든 볼 수 있어요</div>
+    <ul class="list">${setRows}</ul>
+    ${(BANK.rsets || []).length ? `<div class="actions" style="margin-top:10px"><button class="btn" data-act="rsets">실전 모의고사 01~${pad(BANK.rsets.length)} 고르기</button></div>` : ''}
+    ${mocks.length ? `<div class="sec-label" style="margin-top:14px">본 기록</div><ul class="list">${mocks.map(m => `<li><span class="grow">${esc(m.title || '모의고사')} · ${esc(fmtDay(m.date))} · ${m.correct}/${m.total} · ${m.minutes}분</span><b class="tnum ${m.score >= 60 ? 'okp' : 'nop'}">${m.score}점</b></li>`).join('')}</ul>` : ''}</section>`);
+  if ((BANK.rsets || []).length) {
+    const st = BANK.rsets.map(rsetStatus); const done = st.filter(x => x.last);
+    const avg = done.length ? Math.round(done.reduce((a, x) => a + x.last.score, 0) / done.length) : null;
+    parts.push(`<section class="sheet"><div class="sec-label">실전 모의고사 · 실제 회차 구성을 그대로 재현한 20문항</div>
+      <p class="small" style="margin-top:6px">${BANK.rsets.length}세트 · 본 세트 ${done.length}${avg != null ? ` · 평균 ${avg}점` : ''}${done.length ? ` · 오답 ${st.reduce((a, x) => a + (x.last ? x.wrong.length : 0), 0)}문제` : ''}</p></section>`);
+  }
 
   const tq = trendQuestions();
   if (tq.length) {
@@ -932,13 +1016,6 @@ function renderHome() {
       <div class="actions" style="margin-top:10px"><button class="btn" data-act="trend">최근 경향 모아 풀기</button></div></section>`);
   }
 
-  const cal = idx.plan.map(p => {
-    const l = Store.data.log[p.date]; const n = l ? l.n : 0; const d = parseYmd(p.date);
-    const cls = ['d', p.date < t ? 'past' : '', p.date === t ? 'today' : '', n ? 'done' : '', p.mode === 'exam' ? 'exam' : ''].join(' ');
-    return `<div class="${cls}" title="${esc(p.title)}"><div class="wd">${WD[d.getDay()]}</div><div class="num">${d.getDate()}</div><div class="sh">${esc(p.short || '')}</div>${n ? `<div class="cnt">${l.c}/${n}</div>` : ''}</div>`;
-  }).join('');
-  parts.push(`<section><div class="sec-label" style="margin-bottom:8px">2주 계획 · 칸 안 숫자는 그날 맞힌 수/푼 수</div><div class="cal">${cal}</div></section>`);
-
   const gap = Math.max(0, idx.passScore - est.score);
   const areaRows = est.rows.map(r => `<li class="area"><div class="nm">${esc(r.key)}<small>출제 약 ${r.weight}문항</small></div><div class="bar"><i data-lv="${lv(r.acc)}" style="width:${r.acc == null ? 0 : Math.round(r.acc * 100)}%"></i></div><div class="num">${r.acc == null ? '아직 안 풂' : `<b>${Math.round(r.acc * 100)}%</b> · ${r.ok}/${r.att}`} <span class="muted">/${r.total}</span></div></li>`).join('');
   const ticks = [0, 20, 40, 80, 100].map(v => `<span style="left:${v}%" class="${v === 0 ? 'first' : v === 100 ? 'last' : ''}">${v}</span>`).join('');
@@ -947,26 +1024,6 @@ function renderHome() {
     <div class="ruler" aria-label="예상 점수 ${est.score}점, 합격선 60점"><div class="track"><div class="fill" style="width:${Math.min(100, est.score)}%"></div></div><div class="pass" style="left:60%"><span>합격 60</span></div><div class="ticks">${ticks}</div></div>
     <ul class="areas">${areaRows}</ul>
     <p class="note">영역마다 '푼 문제 중 마지막에 맞힌 비율 × 출제 비중(20문항, 문항당 5점)'을 더했어요. 안 푼 영역은 0점으로 셉니다. 출제 비중은 최근 경향을 어림한 값이에요.</p></section>`);
-
-  if ((BANK.rsets || []).length) {
-    const st = BANK.rsets.map(rsetStatus); const done = st.filter(x => x.last);
-    const avg = done.length ? Math.round(done.reduce((a, x) => a + x.last.score, 0) / done.length) : null;
-    parts.push(`<section class="sheet"><div class="sec-label">실전 모의고사 · 실제 회차 구성을 그대로 재현한 20문항</div>
-      <p class="small" style="margin-top:6px">${BANK.rsets.length}세트 · 본 세트 ${done.length}${avg != null ? ` · 평균 ${avg}점` : ''}${done.length ? ` · 오답 ${st.reduce((a, x) => a + (x.last ? x.wrong.length : 0), 0)}문제` : ''}</p>
-      <div class="actions" style="margin-top:10px"><button class="btn" data-act="rsets">실전 01~${pad(BANK.rsets.length)} 고르기</button></div></section>`);
-  }
-  const setRows = BANK.mockSets.map(m => {
-    const taken = Object.values(Store.data.mocks).filter(x => x && x.set === m.id).sort((a, b) => b.at - a.at)[0];
-    return `<li><span class="grow"><b>${esc(m.title)}</b> <span class="muted small">· ${esc(fmtDay(m.date))} 예정 · 처음 보는 20문항</span></span>${taken ? `<b class="tnum ${taken.score >= 60 ? 'okp' : 'nop'}">${taken.score}점</b>` : `<button class="btn" data-act="mockset" data-set="${esc(m.id)}">시작</button>`}</li>`;
-  }).join('');
-  const mocks = Object.values(Store.data.mocks).filter(Boolean).sort((a, b) => b.at - a.at);
-  parts.push(`<section class="sheet"><div class="sec-label">모의고사 · 20문항 · 150분 · 60점 합격</div>
-    <ul class="list">${setRows}</ul>
-    <p class="small muted" style="margin-top:6px">회차 문제는 그 회차를 보기 전까지 다른 곳에 나오지 않아요. 시간은 나가도 계속 흘러요.</p>
-    ${mocks.length ? `<div class="sec-label" style="margin-top:14px">본 기록</div><ul class="list">${mocks.map(m => `<li><span class="grow">${esc(m.title || '모의고사')} · ${esc(fmtDay(m.date))} · ${m.correct}/${m.total} · ${m.minutes}분</span><b class="tnum ${m.score >= 60 ? 'okp' : 'nop'}">${m.score}점</b></li>`).join('')}</ul>` : ''}</section>`);
-
-  const units = idx.areas.map(a => `<div class="unit-group"><h3>${esc(a.key)}</h3><div class="unit-btns">${a.units.map(u => { const g = groupStats(open(BANK.byUnit[u] || [])); const s = g.att ? `${g.ok}/${g.att} 맞음` : `${g.total}문제`; return `<button class="ubtn" data-act="unit" data-unit="${esc(u)}"><span class="t">${esc(u)}</span><span class="s" data-lv="${g.att ? lv(g.acc) : ''}">${s}</span></button>`; }).join('')}</div></div>`).join('');
-  parts.push(`<section class="sheet"><div class="sec-label">단원 골라 풀기 · 안 푼 문제와 틀린 문제부터</div><div class="unit-groups">${units}</div></section>`);
 
   const total = idx.total || BANK.qs.length, study = idx.studyTotal || total;
   parts.push(`<footer class="foot"><p>문제 ${total}개 (학습용 ${study} · 모의고사·실전 전용 ${total - study}) · ${esc(idx.updated)} 갱신. 개념 링크는 정처기 감자로 연결돼요.</p></footer>`);
@@ -1210,6 +1267,7 @@ function renderSettings() {
           ? `<div class="confirm"><b>지금 기록을 붙여 넣은 내용으로 덮어쓸까요?</b><span class="small">지금 기록은 사라져요.</span><div class="actions"><button class="btn danger" data-act="import-yes">덮어쓰기</button><button class="btn" data-act="import-no">취소</button></div></div>`
           : `<div class="actions"><button class="btn" data-act="export">기록 복사</button><button class="btn" data-act="import">붙여 넣은 기록 불러오기</button></div>`}
       </div>
+      <div class="setrow"><b>모의고사·실전 문항 잠금</b><div class="seg" role="group" aria-label="모의고사 문항 잠금">${segBtn('mockLock', 'on', '켜기')}${segBtn('mockLock', 'off', '끄기')}</div><span class="small muted">켜 두면 모의고사·실전 세트 문항은 그 세트를 보기 전까지 단원·랜덤 풀기에 나오지 않아요. 끄면 바로 섞여 나와요.</span></div>
       <div class="setrow"><b>처음 안내</b><div><button class="btn" data-act="guide-reset">홈에 다시 보이기</button></div></div>
       <div class="setrow"><b>정보</b><p class="small muted">문제 ${BANK.qs.length}개 · 문제은행 ${esc(BANK.index.version)} · ${esc(BANK.index.updated)} 갱신</p><p class="small muted">${esc(BANK.index.scopeNote)}</p></div>
     </section>
@@ -1226,6 +1284,7 @@ function render() {
   else if (state.view === 'settings') renderSettings();
   else if (state.view === 'guide' && BANK.guide) renderGuide();
   else if (state.view === 'rsets' && (BANK.rsets || []).length) renderRsets();
+  else if (state.view === 'random') renderRandom();
   else { state.view = 'home'; renderHome(); }
 }
 
@@ -1315,6 +1374,15 @@ document.addEventListener('click', async e => {
     case 'mock': if (!busy()) startMock(); break;
     case 'mockset': if (!busy()) startMockSet(b.dataset.set); break;
     case 'unit': if (!busy()) startUnits([b.dataset.unit], b.dataset.unit); break;
+    case 'area': { if (busy()) break; const a = BANK.index.areas.find(x => x.key === b.dataset.area); if (a) startUnits(a.units, `${a.key} 전체`); break; }
+    case 'plan-day': if (!busy()) startPlanDay(b.dataset.date); break;
+    case 'random': state.view = 'random'; render(); scrollTop(); break;
+    case 'rnd-all': { const o = rndState(); o.areas = []; o.units = []; render(); break; }
+    case 'rnd-area': { const o = rndState(); const k = b.dataset.k; o.units = []; o.areas = o.areas.includes(k) ? o.areas.filter(x => x !== k) : o.areas.concat(k); render(); break; }
+    case 'rnd-unit': { const o = rndState(); const k = b.dataset.k; o.units = o.units.includes(k) ? o.units.filter(x => x !== k) : o.units.concat(k); render(); break; }
+    case 'rnd-n': rndState().n = b.dataset.val; render(); break;
+    case 'rnd-cond': rndState().cond = b.dataset.val; render(); break;
+    case 'random-start': if (!busy()) startRandom(); break;
     case 'trend': if (!busy()) startTrend(); break;
     case 'retry-wrong': { if (busy()) break; const list = state.view === 'wrong' && state.wrongArea !== 'all' ? wrongList().filter(q => q.area === state.wrongArea) : wrongList(); startRetry(list.map(q => q.id), '오답 다시 풀기'); break; }
     case 'retry-session': if (!busy()) startRetry(state.retryIds || [], '틀린 문제 다시'); break;
@@ -1393,6 +1461,6 @@ if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude
 else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
 
 /* 점검용 손잡이 */
-window.__eip = { loadLazy, findSet, rsetStatus, matchShort, gradeOutput, gradeTable, normShort, normOut, grade, state, Store, render, startUnits, startReview, startToday, startMock, startMockSet, startRetry, doGrade, submitMock, finishSession, buildReviewItems, buildTodayItems, estimate, isLocked, unitQuestions, wrongList, loadSession, prefs, bank: () => BANK };
+window.__eip = { randomQuestions, startRandom, startPlanDay, loadLazy, findSet, rsetStatus, matchShort, gradeOutput, gradeTable, normShort, normOut, grade, state, Store, render, startUnits, startReview, startToday, startMock, startMockSet, startRetry, doGrade, submitMock, finishSession, buildReviewItems, buildTodayItems, estimate, isLocked, unitQuestions, wrongList, loadSession, prefs, bank: () => BANK };
 })();
 </script>
