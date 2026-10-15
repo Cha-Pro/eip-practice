@@ -424,7 +424,9 @@ const lv = acc => acc == null ? '' : acc >= 0.6 ? 'good' : acc >= 0.3 ? 'warn' :
 const scrollTop = () => { try { window.scrollTo(0, 0); } catch (e) { /* 무시 */ } };
 
 /* ---------- 설정 (이 기기만) ---------- */
-const prefs = Object.assign({ fs: 'm', theme: 'auto', guideDone: false, mockLock: 'on' }, lsJSON(LS_PREFS) || {});
+const prefs = Object.assign({ fs: 'm', theme: 'auto', guideDone: false, mockLock: 'off' }, lsJSON(LS_PREFS) || {});
+// 모의고사·실전 문항 잠금은 기본 끔(10/15). 설정에서 직접 고른 적이 있을 때만 그 값을 따른다
+if (!prefs.mockLockChosen) prefs.mockLock = 'off';
 function applyPrefs() {
   const root = document.documentElement;
   root.dataset.fs = prefs.fs;
@@ -973,7 +975,7 @@ function renderHome() {
 
   // 단원 목록 (첫 화면의 주인공): 영역 → 단원, 단원마다 문항 수·푼 수·정답률
   const unitRow = u => {
-    const all = BANK.byUnit[u] || []; const g = groupStats(open(all)); const locked = all.filter(isLocked).length;
+    const all = BANK.byUnit[u] || []; const g = groupStats(open(all)); const locked = prefs.mockLock === 'off' ? 0 : all.filter(isLocked).length;
     const acc = g.att ? `${Math.round(g.acc * 100)}%` : '-';
     return `<li><button class="urow" data-act="unit" data-unit="${esc(u)}"><span class="t">${esc(u)}<small>${g.total}문항 · 푼 ${g.att} · 정답률 ${acc}${locked ? ` · 모의고사용 ${locked}문항은 모의고사를 본 뒤 열립니다` : ''}</small></span><span class="s" data-lv="${g.att ? lv(g.acc) : ''}">${g.att ? `${g.ok}/${g.att}` : '시작'} ›</span></button></li>`;
   };
@@ -1267,7 +1269,7 @@ function renderSettings() {
           ? `<div class="confirm"><b>지금 기록을 붙여 넣은 내용으로 덮어쓸까요?</b><span class="small">지금 기록은 사라져요.</span><div class="actions"><button class="btn danger" data-act="import-yes">덮어쓰기</button><button class="btn" data-act="import-no">취소</button></div></div>`
           : `<div class="actions"><button class="btn" data-act="export">기록 복사</button><button class="btn" data-act="import">붙여 넣은 기록 불러오기</button></div>`}
       </div>
-      <div class="setrow"><b>모의고사·실전 문항 잠금</b><div class="seg" role="group" aria-label="모의고사 문항 잠금">${segBtn('mockLock', 'on', '켜기')}${segBtn('mockLock', 'off', '끄기')}</div><span class="small muted">켜 두면 모의고사·실전 세트 문항은 그 세트를 보기 전까지 단원·랜덤 풀기에 나오지 않아요. 끄면 바로 섞여 나와요.</span></div>
+      <div class="setrow"><b>모의고사·실전 문항 잠금</b><div class="seg" role="group" aria-label="모의고사 문항 잠금">${segBtn('mockLock', 'on', '켜기')}${segBtn('mockLock', 'off', '끄기')}</div><span class="small muted">기본은 끔이라 모든 문항이 단원·랜덤 풀기에 나와요. 켜면 모의고사·실전 세트 문항은 그 세트를 보기 전까지 숨겨요.</span></div>
       <div class="setrow"><b>처음 안내</b><div><button class="btn" data-act="guide-reset">홈에 다시 보이기</button></div></div>
       <div class="setrow"><b>정보</b><p class="small muted">문제 ${BANK.qs.length}개 · 문제은행 ${esc(BANK.index.version)} · ${esc(BANK.index.updated)} 갱신</p><p class="small muted">${esc(BANK.index.scopeNote)}</p></div>
     </section>
@@ -1367,7 +1369,7 @@ document.addEventListener('click', async e => {
     case 'guide-point': if (!busy()) startGuidePoint(b.dataset.gid); break;
     case 'guide-done': prefs.guideDone = true; savePrefs(); render(); break;
     case 'guide-reset': prefs.guideDone = false; savePrefs(); toast('홈에 처음 안내가 다시 보여요.'); break;
-    case 'pref': prefs[b.dataset.key] = b.dataset.val; savePrefs(); render(); break;
+    case 'pref': prefs[b.dataset.key] = b.dataset.val; if (b.dataset.key === 'mockLock') prefs.mockLockChosen = true; savePrefs(); render(); break;
     case 'flush': Store.flush(); toast('다시 보내는 중이에요.'); break;
     case 'today': if (!busy()) startToday(); break;
     case 'review': if (!busy()) startReview(); break;
